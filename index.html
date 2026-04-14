@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kitchen Spelling Adventure</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Orbitron:wght@700&display=swap');
+
+        body {
+            font-family: 'Fredoka One', cursive, sans-serif;
+            margin: 0; display: flex; flex-direction: column; align-items: center;
+            height: 100vh; overflow: hidden; touch-action: none;
+            background-color: #dfe6e9;
+            background-image: radial-gradient(#ced6e0 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+
+        #game-container {
+            width: 95%; max-width: 900px; height: 96vh;
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 40px; margin-top: 10px;
+            display: flex; flex-direction: column; align-items: center;
+            position: relative; border: 8px solid white;
+            box-shadow: 0 15px 50px rgba(0,0,0,0.1);
+        }
+
+        header { width: 90%; display: flex; justify-content: space-between; align-items: center; padding: 10px; }
+        #timer { font-size: 1.8rem; background: #ff7675; color: white; padding: 5px 25px; border-radius: 50px; box-shadow: 0 4px 0 #d63031; }
+        #round-indicator { font-size: 1.2rem; background: #74b9ff; color: white; padding: 5px 15px; border-radius: 15px; }
+        #feedback { font-size: 1.8rem; color: #2d3436; height: 40px; text-align: center; }
+
+        #food-display { font-size: 80px; margin: 0; }
+        #meal-clock {
+            font-family: 'Orbitron', sans-serif; font-size: 1.8rem;
+            background: #2d3436; color: #00ff00;
+            padding: 4px 15px; border-radius: 10px;
+            border: 2px solid #00ff00; box-shadow: 0 0 10px #00ff00;
+        }
+
+        #drop-zone { display: flex; justify-content: center; gap: 8px; margin: 15px 0; min-height: 95px; width: 100%; flex-wrap: wrap; }
+
+        .slot {
+            width: 60px; height: 80px;
+            background: #f1f2f6; border: 4px dashed #b2bec3;
+            border-radius: 15px; display: flex;
+            justify-content: center; align-items: center;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .slot.wrong { background: #fab1a0; border-color: #e17055; }
+
+        #letter-area {
+            flex-grow: 1; width: 100%; position: relative;
+            background-color: #f7f1e3;
+            background-image: linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee), 
+                              linear-gradient(45deg, #eee 25%, transparent 25%, transparent 75%, #eee 75%, #eee);
+            background-size: 60px 60px; border-top: 4px solid #dfe6e9; overflow: hidden;
+        }
+
+        .letter {
+            width: 60px; height: 80px;
+            background: #ffeaa7; border: 4px solid #fdcb6e;
+            border-radius: 15px; display: flex;
+            justify-content: center; align-items: center;
+            font-size: 2.5rem; color: #2d3436;
+            position: absolute; cursor: grab;
+            user-select: none; box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+            touch-action: none; transition: transform 0.1s;
+        }
+
+        .is-dragging {
+            position: fixed !important;
+            z-index: 10000 !important;
+            transform: scale(1.2) !important;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+
+        .returning { transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important; }
+
+        #controls { padding: 15px; display: flex; gap: 15px; }
+        button {
+            font-family: 'Fredoka One', cursive; padding: 12px 25px;
+            font-size: 1.1rem; border: none; border-radius: 20px;
+            cursor: pointer; color: white; box-shadow: 0 6px 0 rgba(0,0,0,0.2);
+        }
+        #btn-reveal { background: #0984e3; }
+        #btn-next { background: #00b894; display: none; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <header>
+        <div id="round-indicator">Round 1</div>
+        <div id="timer">⏱️ 30</div>
+    </header>
+    <div id="feedback"></div>
+    <div id="food-container" style="text-align: center;">
+        <div id="food-display"></div>
+        <div id="meal-clock"></div>
+    </div>
+    <div id="drop-zone"></div>
+    <div id="letter-area"></div>
+    <div id="controls">
+        <button id="btn-reveal">Reveal Answer</button>
+        <button id="btn-next">Next Word ➔</button>
+    </div>
+</div>
+
+<script>
+    const originalWords = [
+        { w: 'bread', i: '🍞', t: '' },
+        { w: 'soup', i: '🥣', t: '' },
+        { w: 'salad', i: '🥗', t: '' },
+        { w: 'lunch', i: '🍱', t: '12:00' },
+        { w: 'dinner', i: '🍽️', t: '19:50' },
+        { w: 'chicken', i: '🍗', t: '' },
+        { w: 'noodles', i: '🍜', t: '' },
+        { w: 'breakfast', i: '🍳', t: '07:15' }
+    ];
+
+    let gameRound = 1;
+    let wordsData = [...originalWords];
+    let currentIndex = 0;
+    let timeLeft = 30;
+    let timer;
+    let letters = [];
+    let isGameOver = false;
+    let currentSpellingIndex = 0;
+
+    const area = document.getElementById('letter-area');
+    const dropZone = document.getElementById('drop-zone');
+    const timerEl = document.getElementById('timer');
+    const feedback = document.getElementById('feedback');
+    const roundEl = document.getElementById('round-indicator');
+
+    function initRound() {
+        clearInterval(timer);
+        isGameOver = false;
+        timeLeft = 30;
+        letters = [];
+        currentSpellingIndex = 0;
+        area.innerHTML = '';
+        dropZone.innerHTML = '';
+        feedback.innerText = '';
+        timerEl.innerText = `⏱️ ${timeLeft}`;
+        roundEl.innerText = `Round ${gameRound}`;
+        document.getElementById('btn-next').style.display = 'none';
+        document.getElementById('btn-reveal').style.display = 'block';
+
+        const data = wordsData[currentIndex];
+        document.getElementById('food-display').innerText = data.i;
+        const clock = document.getElementById('meal-clock');
+        clock.innerText = data.t;
+        clock.style.display = data.t ? 'inline-block' : 'none';
+
+        for (let i = 0; i < data.w.length; i++) {
+            const slot = document.createElement('div');
+            slot.className = 'slot';
+            dropZone.appendChild(slot);
+        }
+
+        let chars = data.w.split('').map((c, idx) => ({ char: c, id: idx }));
+        // Always shuffle letters so they aren't in order in the pool
+        chars = chars.sort(() => Math.random() - 0.5);
+
+        chars.forEach(item => {
+            const el = document.createElement('div');
+            el.className = 'letter';
+            el.innerText = item.char;
+            
+            const speed = gameRound === 1 ? 2.5 : 4;
+            const obj = {
+                el: el,
+                char: item.char,
+                x: Math.random() * (area.clientWidth - 70),
+                y: Math.random() * (area.clientHeight - 90),
+                vx: (Math.random() - 0.5) * speed,
+                vy: (Math.random() - 0.5) * speed,
+                rot: (Math.random() - 0.5) * 10,
+                vRot: (Math.random() - 0.5) * 0.2,
+                isDragging: false,
+                inSlot: false
+            };
+
+            el.addEventListener('pointerdown', (e) => startDrag(e, obj));
+            area.appendChild(el);
+            letters.push(obj);
+        });
+
+        timer = setInterval(() => {
+            timeLeft--;
+            timerEl.innerText = `⏱️ ${timeLeft}`;
+            if (timeLeft <= 0) endRound(false);
+        }, 1000);
+
+        requestAnimationFrame(updatePhysics);
+    }
+
+    function updatePhysics() {
+        if (isGameOver) return;
+        letters.forEach(l => {
+            if (l.isDragging || l.inSlot) return;
+            l.x += l.vx;
+            l.y += l.vy;
+            l.rot += l.vRot;
+
+            if (l.x <= 0 || l.x >= area.clientWidth - 65) l.vx *= -1;
+            if (l.y <= 0 || l.y >= area.clientHeight - 85) l.vy *= -1;
+            if (Math.abs(l.rot) > 15) l.vRot *= -1;
+
+            l.el.style.left = l.x + 'px';
+            l.el.style.top = l.y + 'px';
+            l.el.style.transform = `rotate(${l.rot}deg)`;
+        });
+        requestAnimationFrame(updatePhysics);
+    }
+
+    let dragObj = null;
+    let dragOffset = { x: 0, y: 0 };
+
+    function startDrag(e, obj) {
+        if (isGameOver || obj.inSlot) return;
+        dragObj = obj;
+        obj.isDragging = true;
+        
+        const rect = dragObj.el.getBoundingClientRect();
+        dragOffset.x = e.clientX - rect.left;
+        dragOffset.y = e.clientY - rect.top;
+        
+        document.body.appendChild(dragObj.el);
+        dragObj.el.classList.add('is-dragging');
+        updateDragPos(e);
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onEnd);
+    }
+
+    function onMove(e) {
+        if (!dragObj) return;
+        updateDragPos(e);
+        
+        // Visual feedback when hovering over a box
+        const slots = document.querySelectorAll('.slot');
+        slots.forEach(slot => {
+            const r = slot.getBoundingClientRect();
+            if (e.clientX > r.left && e.clientX < r.right && e.clientY > r.top && e.clientY < r.bottom) {
+                slot.classList.toggle('wrong', dragObj.char !== wordsData[currentIndex].w[currentSpellingIndex]);
+            } else {
+                slot.classList.remove('wrong');
+            }
+        });
+    }
+
+    function updateDragPos(e) {
+        dragObj.el.style.left = (e.clientX - dragOffset.x) + 'px';
+        dragObj.el.style.top = (e.clientY - dragOffset.y) + 'px';
+    }
+
+    function onEnd(e) {
+        if (!dragObj) return;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onEnd);
+        
+        const targetSlot = document.querySelectorAll('.slot')[currentSpellingIndex];
+        const rect = targetSlot.getBoundingClientRect();
+        const isOverCorrectSlot = e.clientX > rect.left && e.clientX < rect.right && e.clientY > rect.top && e.clientY < rect.bottom;
+
+        if (isOverCorrectSlot && dragObj.char === wordsData[currentIndex].w[currentSpellingIndex]) {
+            // Correct letter dropped in correct sequence!
+            targetSlot.appendChild(dragObj.el);
+            dragObj.el.classList.remove('is-dragging');
+            dragObj.el.style.position = 'relative';
+            dragObj.el.style.left = '0';
+            dragObj.el.style.top = '0';
+            dragObj.el.style.transform = 'rotate(0deg)';
+            dragObj.inSlot = true;
+            currentSpellingIndex++;
+            feedback.innerText = "Correct! ✨";
+            feedback.style.color = "#0984e3";
+            checkWin();
+        } else {
+            // REPEL/RETURN logic: Fly back to the pool
+            dragObj.el.classList.remove('is-dragging');
+            dragObj.el.classList.add('returning');
+            
+            area.appendChild(dragObj.el);
+            const areaRect = area.getBoundingClientRect();
+            const poolX = Math.random() * (area.clientWidth - 70);
+            const poolY = Math.random() * (area.clientHeight - 90);
+            
+            dragObj.el.style.left = poolX + 'px';
+            dragObj.el.style.top = poolY + 'px';
+            
+            setTimeout(() => {
+                dragObj.el.classList.remove('returning');
+                dragObj.x = poolX;
+                dragObj.y = poolY;
+                dragObj.vx = (Math.random() - 0.5) * 6;
+                dragObj.vy = (Math.random() - 0.5) * 6;
+            }, 500);
+
+            if (isOverCorrectSlot) {
+                feedback.innerText = "Not that one! ❌";
+                feedback.style.color = "#d63031";
+            }
+        }
+
+        document.querySelectorAll('.slot').forEach(s => s.classList.remove('wrong'));
+        dragObj.isDragging = false;
+        dragObj = null;
+    }
+
+    function checkWin() {
+        if (currentSpellingIndex === wordsData[currentIndex].w.length) endRound(true);
+    }
+
+    function endRound(win) {
+        isGameOver = true;
+        clearInterval(timer);
+        if (win) {
+            feedback.innerText = "Great Job! 🥳";
+            feedback.style.color = "#00b894";
+            document.getElementById('btn-reveal').style.display = 'none';
+            document.getElementById('btn-next').style.display = 'block';
+        } else {
+            feedback.innerText = "Time's up! Try again? ⏰";
+        }
+    }
+
+    document.getElementById('btn-reveal').onclick = () => {
+        const data = wordsData[currentIndex];
+        const slots = document.querySelectorAll('.slot');
+        area.innerHTML = '';
+        data.w.split('').forEach((char, i) => {
+            slots[i].innerHTML = `<div class="letter locked" style="position:relative; background:#55efc4; color:white;">${char}</div>`;
+        });
+        endRound(true);
+    };
+
+    document.getElementById('btn-next').onclick = () => {
+        currentIndex++;
+        if (currentIndex >= wordsData.length) {
+            gameRound = (gameRound === 1) ? 2 : 1;
+            currentIndex = 0;
+            wordsData = [...originalWords].sort(() => Math.random() - 0.5);
+        }
+        initRound();
+    };
+
+    initRound();
+</script>
+</body>
+</html>
